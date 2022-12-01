@@ -142,6 +142,38 @@ impl PageTable {
     pub fn token(&self) -> usize {
         8usize << 60 | self.root_ppn.0
     }
+
+    pub fn mmap(&mut self, vpn: VirtPageNum, flags: PTEFlags) -> bool {
+        trace!("MMAP {vpn:?} BEGIN");
+        let pte = self.find_pte(vpn);
+        let pte = self.find_pte_create(vpn).unwrap();
+        assert!(!pte.is_valid(), "vpn {:?} is mapped before mapping", vpn);
+        let Some(tracker) = frame_alloc() else { return false; };
+        let ppn = tracker.ppn;
+        *pte = PageTableEntry::new(ppn, flags | PTEFlags::V);
+        let pte = self.find_pte(vpn);
+        let pte = self.find_pte_create(vpn).unwrap();
+        self.frames.push(tracker);
+        trace!("MMAP {vpn:?} SUCCESS");
+        true
+    }
+
+    pub fn munmap(&mut self, vpn: VirtPageNum) -> bool {
+        let Some(pte) = self.find_pte_create(vpn) else { return false; };
+        let ppn = pte.ppn();
+
+        if !pte.is_valid() {
+            return false;
+        }
+        *pte = PageTableEntry::empty();
+        let id = self
+            .frames
+            .iter()
+            .position(|fr| fr.ppn == ppn)
+            .unwrap();
+        self.frames.remove(id);
+        true
+    }
 }
 
 /// translate a pointer to a mutable u8 Vec through page table
