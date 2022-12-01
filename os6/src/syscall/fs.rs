@@ -6,6 +6,7 @@ use crate::fs::OSInode;
 use crate::fs::OpenFlags;
 use crate::fs::Stat;
 use crate::fs::StatMode;
+use crate::fs::ROOT_INODE;
 use crate::mm::translated_byte_buffer;
 use crate::mm::translated_refmut;
 use crate::mm::translated_str;
@@ -109,8 +110,16 @@ pub fn sys_fstat(fd: usize, st: *mut Stat) -> isize {
     0
 }
 
-pub fn sys_linkat(_old_name: *const u8, _new_name: *const u8) -> isize {
-    -1
+pub fn sys_linkat(old_name: *const u8, new_name: *const u8) -> isize {
+    let token = current_user_token();
+    let old_name = translated_str(token, old_name);
+    let new_name = translated_str(token, new_name);
+    if ROOT_INODE.hard_link(&new_name, &old_name).is_some() {
+        0
+    } else {
+        -1
+    }
+    // let Some((inode_id, inode)) = ROOT_INODE.find(&old_name) else { return -1; };
 }
 
 pub fn sys_unlinkat(_name: *const u8) -> isize {

@@ -1,4 +1,5 @@
 #![no_std]
+#![feature(let_else)]
 
 extern crate alloc;
 

@@ -14,6 +14,7 @@ pub struct OSInode {
     readable: bool,
     writable: bool,
     is_file: bool,
+    id: u64,
     inner: UPSafeCell<OSInodeInner>,
 }
 
@@ -25,12 +26,13 @@ pub struct OSInodeInner {
 
 impl OSInode {
     /// Construct an OS inode from a inode
-    pub fn new(readable: bool, writable: bool, inode: Arc<Inode>) -> Self {
+    pub fn new(readable: bool, writable: bool, id: u64, inode: Arc<Inode>) -> Self {
         let is_file = inode.is_file();
         Self {
             readable,
             writable,
             is_file,
+            id,
             inner: unsafe { UPSafeCell::new(OSInodeInner { offset: 0, inode }) },
         }
     }
@@ -55,7 +57,7 @@ impl OSInode {
     }
 
     pub fn ino(&self) -> u64 {
-        return self.inner.exclusive_access().inode.ino();
+        return self.id
     }
 
     pub fn is_file(&self) -> bool {
@@ -110,22 +112,22 @@ impl OpenFlags {
 pub fn open_file(name: &str, flags: OpenFlags) -> Option<Arc<OSInode>> {
     let (readable, writable) = flags.read_write();
     if flags.contains(OpenFlags::CREATE) {
-        if let Some(inode) = ROOT_INODE.find(name) {
+        if let Some((id, inode)) = ROOT_INODE.find(name) {
             // clear size
             inode.clear();
-            Some(Arc::new(OSInode::new(readable, writable, inode)))
+            Some(Arc::new(OSInode::new(readable, writable, id, inode)))
         } else {
             // create file
             ROOT_INODE
                 .create(name)
-                .map(|inode| Arc::new(OSInode::new(readable, writable, inode)))
+                .map(|(id, inode)| Arc::new(OSInode::new(readable, writable, id, inode)))
         }
     } else {
-        ROOT_INODE.find(name).map(|inode| {
+        ROOT_INODE.find(name).map(|(id, inode)| {
             if flags.contains(OpenFlags::TRUNC) {
                 inode.clear();
             }
-            Arc::new(OSInode::new(readable, writable, inode))
+            Arc::new(OSInode::new(readable, writable, id, inode))
         })
     }
 }

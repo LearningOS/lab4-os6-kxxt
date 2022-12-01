@@ -80,7 +80,7 @@ fn easy_fs_pack() -> std::io::Result<()> {
         let mut all_data: Vec<u8> = Vec::new();
         host_file.read_to_end(&mut all_data).unwrap();
         // create a file in easy-fs
-        let inode = root_inode.create(app.as_str()).unwrap();
+        let (_, inode) = root_inode.create(app.as_str()).unwrap();
         // write data to easy-fs
         inode.write_at(0, all_data.as_slice());
     }
@@ -110,7 +110,7 @@ fn efs_test() -> std::io::Result<()> {
     for name in root_inode.ls() {
         println!("{}", name);
     }
-    let filea = root_inode.find("filea").unwrap();
+    let filea = root_inode.find("filea").unwrap().1;
     let greet_str = "Hello, world!";
     filea.write_at(0, greet_str.as_bytes());
     //let mut buffer = [0u8; BLOCK_SZ];
