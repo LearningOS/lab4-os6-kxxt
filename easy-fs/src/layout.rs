@@ -98,6 +98,7 @@ impl DiskInode {
     pub fn initialize(&mut self, type_: DiskInodeType) {
         self.size = 0;
         self.direct.iter_mut().for_each(|v| *v = 0);
+        self.nlink = 1;
         self.indirect1 = 0;
         self.indirect2 = 0;
         self.type_ = type_;

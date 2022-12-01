@@ -194,4 +194,8 @@ impl Inode {
     pub fn is_file(&self) -> bool {
         return self.read_disk_inode(|x| x.is_file());
     }
+
+    pub fn nlink(&self) -> u32 {
+        return self.read_disk_inode(|x| x.nlink);
+    }
 }

@@ -1,12 +1,10 @@
 mod inode;
 mod stdio;
 
-use core::any::Any;
-
 use crate::mm::UserBuffer;
 
 /// The common abstraction of all IO resources
-pub trait File: Send + Sync + Any {
+pub trait File: Send + Sync {
     fn readable(&self) -> bool;
     fn writable(&self) -> bool;
     fn read(&self, buf: UserBuffer) -> usize;

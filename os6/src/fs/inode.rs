@@ -49,6 +49,11 @@ impl OSInode {
         }
         v
     }
+
+    pub fn nlink(&self) -> u32 {
+        return self.inner.exclusive_access().inode.nlink();
+    }
+
     pub fn ino(&self) -> u64 {
         return self.inner.exclusive_access().inode.ino();
     }

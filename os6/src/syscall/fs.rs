@@ -1,6 +1,7 @@
 //! File and filesystem-related syscalls
 
 use crate::fs::open_file;
+use crate::fs::File;
 use crate::fs::OSInode;
 use crate::fs::OpenFlags;
 use crate::fs::Stat;
@@ -13,6 +14,7 @@ use crate::task::current_task;
 use crate::task::current_user_token;
 use alloc::sync::Arc;
 use core::any::Any;
+use core::any::TypeId;
 
 pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
     let token = current_user_token();
@@ -80,13 +82,20 @@ pub fn sys_fstat(fd: usize, st: *mut Stat) -> isize {
     let token = current_user_token();
     let task = current_task().unwrap();
     let inner = task.inner_exclusive_access();
+    info!("fstat {}", fd);
     if fd <= 2 {
         // doesn't support std{in, out, err} yet
         return -1;
     }
     let fd_table = &inner.fd_table;
     let Some(Some(file)) = fd_table.get(fd) else { return -1;};
-    let Some(inode) = (file as &dyn Any).downcast_ref::<OSInode>() else { return -1;};
+    let file = file.as_ref();
+    // todo: find a sound way to downcast trait object
+    let inode = unsafe { &*(file as *const dyn File as *const OSInode) };
+    // let Some(inode) = (&file as &dyn Any).downcast_ref_unchecked::<OSInode>() else {
+    //     error!("Failed to downcast File to OSInode! typeid: {:?}, OSInode: {:?}", file.type_id(), TypeId::of::<OSInode>());
+    //     return -1;
+    // };
     let stat = translated_refmut(token, st);
     *stat = Stat::new(
         inode.ino(),
@@ -95,7 +104,7 @@ pub fn sys_fstat(fd: usize, st: *mut Stat) -> isize {
         } else {
             StatMode::DIR
         },
-        todo!(),
+        inode.nlink(),
     );
     0
 }
