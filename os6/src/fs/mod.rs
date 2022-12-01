@@ -1,10 +1,12 @@
-mod stdio;
 mod inode;
+mod stdio;
+
+use core::any::Any;
 
 use crate::mm::UserBuffer;
 
 /// The common abstraction of all IO resources
-pub trait File : Send + Sync {
+pub trait File: Send + Sync + Any {
     fn readable(&self) -> bool;
     fn writable(&self) -> bool;
     fn read(&self, buf: UserBuffer) -> usize;
@@ -27,6 +29,18 @@ pub struct Stat {
     pad: [u64; 7],
 }
 
+impl Stat {
+    pub fn new(ino: u64, mode: StatMode, nlink: u32) -> Self {
+        Self {
+            ino,
+            mode,
+            nlink,
+            dev: 0,
+            pad: [0; 7],
+        }
+    }
+}
+
 bitflags! {
     /// The mode of a inode
     /// whether a directory or a file
@@ -37,7 +51,7 @@ bitflags! {
         /// ordinary regular file
         const FILE  = 0o100000;
     }
-}    
+}
 
+pub use inode::{list_apps, open_file, OSInode, OpenFlags};
 pub use stdio::{Stdin, Stdout};
-pub use inode::{OSInode, open_file, OpenFlags, list_apps};
