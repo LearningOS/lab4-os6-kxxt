@@ -114,6 +114,7 @@ pub fn sys_linkat(old_name: *const u8, new_name: *const u8) -> isize {
     let token = current_user_token();
     let old_name = translated_str(token, old_name);
     let new_name = translated_str(token, new_name);
+    info!("Link {} to {}", new_name, old_name);
     if ROOT_INODE.hard_link(&new_name, &old_name).is_some() {
         0
     } else {
@@ -122,6 +123,12 @@ pub fn sys_linkat(old_name: *const u8, new_name: *const u8) -> isize {
     // let Some((inode_id, inode)) = ROOT_INODE.find(&old_name) else { return -1; };
 }
 
-pub fn sys_unlinkat(_name: *const u8) -> isize {
-    -1
+pub fn sys_unlinkat(name: *const u8) -> isize {
+    let token = current_user_token();
+    let name = translated_str(token, name);
+    if ROOT_INODE.unlink(&name) {
+        0
+    } else {
+        -1
+    }
 }

@@ -5,6 +5,7 @@ use super::{
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use log::info;
 use spin::{Mutex, MutexGuard};
 
 /// Virtual filesystem layer over easy-fs
@@ -98,20 +99,15 @@ impl Inode {
 
     /// Create hard link
     pub fn hard_link(&self, name: &str, to: &str) -> Option<Arc<Inode>> {
-        let mut fs = self.fs.lock();
-        if self
-            .modify_disk_inode(|root_inode| {
-                // assert it is a directory
-                assert!(root_inode.is_dir());
-                // has the file been created?
-                self.find_inode_id(name, root_inode)
-            })
-            .is_some()
-        {
+        if self.is_file() {
             return None;
         }
         let Some((to_inode_id, to_inode)) = self.find(to) else { return None; };
+        info!("Found target inode");
+        let mut fs = self.fs.lock();
+        info!("FS Lock Acquired");
         self.modify_disk_inode(|root_inode| {
+            info!("Modifying Disk inode!");
             // append file in the dirent
             let file_count = (root_inode.size as usize) / DIRENT_SZ;
             let new_size = (file_count + 1) * DIRENT_SZ;
@@ -125,8 +121,27 @@ impl Inode {
                 &self.block_device,
             );
         });
+        info!("Before modifying target disk inode!");
         to_inode.modify_disk_inode(|inode| inode.nlink += 1);
         Some(to_inode)
+    }
+
+    pub fn unlink(&self, name: &str) -> bool {
+        let Some((target_id, target)) = self.find(name) else { return false; };
+        let mut fs = self.fs.lock();
+        target.modify_disk_inode(|inode| {
+            inode.nlink -= 1;
+            if inode.nlink == 0 {
+                // Dealloc data
+                let data_blocks = inode.clear_size(&self.block_device);
+                for data_block in data_blocks {
+                    fs.dealloc_data(data_block);
+                }
+                // Dealloc inode
+                fs.dealloc_inode(target_id as u32);
+            }
+        });
+        true
     }
 
     /// Create inode under current inode by name
