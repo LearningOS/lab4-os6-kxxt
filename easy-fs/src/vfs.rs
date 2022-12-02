@@ -5,7 +5,7 @@ use super::{
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use log::info;
+use log::{debug, info};
 use spin::{Mutex, MutexGuard};
 
 /// Virtual filesystem layer over easy-fs
@@ -123,6 +123,7 @@ impl Inode {
         });
         info!("Before modifying target disk inode!");
         to_inode.modify_disk_inode(|inode| inode.nlink += 1);
+        block_cache_sync_all();
         Some(to_inode)
     }
 
@@ -135,15 +136,39 @@ impl Inode {
                 // Dealloc data
                 let data_blocks = inode.clear_size(&self.block_device);
                 for data_block in data_blocks {
-                    fs.dealloc_data(data_block);
+                    if data_block > 0 {
+                        debug!("Dealloc data block {data_block}");
+                        fs.dealloc_data(data_block);
+                    }
                 }
                 // Dealloc inode
+                debug!("Dealloc inode {target_id}");
                 fs.dealloc_inode(target_id as u32);
+                // Remove corresponding dirent
+                self.remove_dirent(name);
             }
         });
+        block_cache_sync_all();
         true
     }
 
+    fn try_modify_empty_dirent(&self, dirent: &DirEntry) -> bool {
+        self.modify_disk_inode(|disk_inode| {
+            let file_count = (disk_inode.size as usize) / DIRENT_SZ;
+            for i in 0..file_count {
+                let mut empty = DirEntry::empty();
+                assert_eq!(
+                    disk_inode.read_at(i * DIRENT_SZ, empty.as_bytes_mut(), &self.block_device,),
+                    DIRENT_SZ,
+                );
+                if empty.as_bytes()[0] == 0 {
+                    disk_inode.write_at(i * DIRENT_SZ, dirent.as_bytes(), &self.block_device);
+                    return true;
+                }
+            }
+            false
+        })
+    }
     /// Create inode under current inode by name
     pub fn create(&self, name: &str) -> Option<(u64, Arc<Inode>)> {
         let mut fs = self.fs.lock();
@@ -168,20 +193,23 @@ impl Inode {
             .modify(new_inode_block_offset, |new_inode: &mut DiskInode| {
                 new_inode.initialize(DiskInodeType::File);
             });
-        self.modify_disk_inode(|root_inode| {
-            // append file in the dirent
-            let file_count = (root_inode.size as usize) / DIRENT_SZ;
-            let new_size = (file_count + 1) * DIRENT_SZ;
-            // increase size
-            self.increase_size(new_size as u32, root_inode, &mut fs);
-            // write dirent
-            let dirent = DirEntry::new(name, new_inode_id);
-            root_inode.write_at(
-                file_count * DIRENT_SZ,
-                dirent.as_bytes(),
-                &self.block_device,
-            );
-        });
+        // write dirent
+        let dirent = DirEntry::new(name, new_inode_id);
+        if !self.try_modify_empty_dirent(&dirent) {
+            self.modify_disk_inode(|root_inode| {
+                // append file in the dirent
+                let file_count = (root_inode.size as usize) / DIRENT_SZ;
+                let new_size = (file_count + 1) * DIRENT_SZ;
+                // increase size
+                self.increase_size(new_size as u32, root_inode, &mut fs);
+
+                root_inode.write_at(
+                    file_count * DIRENT_SZ,
+                    dirent.as_bytes(),
+                    &self.block_device,
+                );
+            });
+        }
 
         let (block_id, block_offset) = fs.get_disk_inode_pos(new_inode_id);
         block_cache_sync_all();
@@ -197,6 +225,50 @@ impl Inode {
         ))
         // release efs lock automatically by compiler
     }
+    pub fn remove_dirent(&self, name: &str) {
+        self.modify_disk_inode(|disk_inode| {
+            let file_count = (disk_inode.size as usize) / DIRENT_SZ;
+            (0..file_count).for_each(|i| {
+                let mut dirent = DirEntry::empty();
+                assert_eq!(
+                    disk_inode.read_at(i * DIRENT_SZ, dirent.as_bytes_mut(), &self.block_device,),
+                    DIRENT_SZ,
+                );
+                if dirent.name() == name {
+                    disk_inode.write_at(
+                        i * DIRENT_SZ,
+                        DirEntry::empty().as_bytes(),
+                        &self.block_device,
+                    );
+                }
+            })
+        })
+    }
+    /// List direntries with filter applied, only call this fn when you holds a lock
+    pub fn dirents_filter(&self, f: impl Fn(&DirEntry) -> bool) -> Vec<DirEntry> {
+        self.read_disk_inode(|disk_inode| {
+            let file_count = (disk_inode.size as usize) / DIRENT_SZ;
+            (0..file_count)
+                .filter_map(|i| {
+                    let mut dirent = DirEntry::empty();
+                    assert_eq!(
+                        disk_inode.read_at(
+                            i * DIRENT_SZ,
+                            dirent.as_bytes_mut(),
+                            &self.block_device,
+                        ),
+                        DIRENT_SZ,
+                    );
+                    // v.push(dirent);
+                    if f(&dirent) {
+                        Some(dirent)
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        })
+    }
     /// List inodes under current inode
     pub fn ls(&self) -> Vec<String> {
         let _fs = self.fs.lock();
@@ -209,7 +281,10 @@ impl Inode {
                     disk_inode.read_at(i * DIRENT_SZ, dirent.as_bytes_mut(), &self.block_device,),
                     DIRENT_SZ,
                 );
-                v.push(String::from(dirent.name()));
+                if dirent.as_bytes()[0] != 0 {
+                    // Cleared dir entry
+                    v.push(String::from(dirent.name()));
+                }
             }
             v
         })
