@@ -70,7 +70,7 @@ fn easy_fs_pack() -> std::io::Result<()> {
         host_file.read_to_end(&mut all_data).unwrap();
         // create a file in easy-fs
         let name = path.file_stem().unwrap().to_str().unwrap();
-        let inode = root_inode.create(name).unwrap();
+        let (_, inode) = root_inode.create(name).unwrap();
         // write data to easy-fs
         inode.write_at(0, all_data.as_slice());
     }

@@ -17,8 +17,11 @@
 
 #![no_std]
 #![no_main]
+#![feature(let_else)]
 #![feature(panic_info_message)]
+#![feature(is_some_with)]
 #![feature(alloc_error_handler)]
+#![feature(associated_type_bounds)]
 
 #[macro_use]
 extern crate bitflags;
@@ -30,6 +33,8 @@ extern crate alloc;
 #[macro_use]
 mod console;
 mod config;
+mod drivers;
+mod fs;
 mod lang_items;
 mod logging;
 mod mm;
@@ -39,8 +44,6 @@ mod syscall;
 mod task;
 mod timer;
 mod trap;
-mod drivers;
-mod fs;
 
 core::arch::global_asm!(include_str!("entry.asm"));
 

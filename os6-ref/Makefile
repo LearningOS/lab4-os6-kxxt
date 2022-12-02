@@ -64,6 +64,3 @@ dbg: build
 
 .PHONY: build env kernel clean fs-img
 
-[profile.release]
-debug = true
-opt-level = 0
